@@ -15,6 +15,9 @@ using System.Diagnostics;
 using System.Text.RegularExpressions;
 using System.Text;
 using System.Reflection;
+#if UNITY_2018_3_OR_NEWER
+using UnityEditor.Build.Player;
+#endif
 
 namespace IFix.Editor
 {
@@ -79,6 +82,7 @@ namespace IFix.Editor
                 UnityEngine.Debug.LogError("can not find mono!");
             }
             var inject_tool_path = "./IFixToolKit/IFix.exe";
+            //"--runtime = v4.0.30319"
             if (!File.Exists(inject_tool_path))
             {
                 UnityEngine.Debug.LogError("please install the ToolKit");
@@ -87,7 +91,11 @@ namespace IFix.Editor
 
             Process hotfix_injection = new Process();
             hotfix_injection.StartInfo.FileName = mono_path;
+#if UNITY_5_6_OR_NEWER
+            hotfix_injection.StartInfo.Arguments = "--runtime=v4.0.30319 \"" + inject_tool_path + "\" \""
+#else
             hotfix_injection.StartInfo.Arguments = "\"" + inject_tool_path + "\" \""
+#endif
                 + string.Join("\" \"", args.ToArray()) + "\"";
             hotfix_injection.StartInfo.WindowStyle = ProcessWindowStyle.Hidden;
             hotfix_injection.StartInfo.RedirectStandardOutput = true;
@@ -388,7 +396,8 @@ namespace IFix.Editor
         public enum Platform
         {
             android,
-            ios
+            ios,
+            standalone
         }
 
         //缓存：解析好的编译参数
@@ -573,22 +582,51 @@ namespace IFix.Editor
         }
 
         //生成特定平台的patch
-        public static void GenPlatformPatch(Platform platform, string patchPath,
+        public static void GenPlatformPatch(Platform platform, string patchOutputDir,
             string corePath = "./Assets/Plugins/IFix.Core.dll")
         {
+            var outputDir = "Temp/ifix";
             Directory.CreateDirectory("Temp");
-            Directory.CreateDirectory("Temp/ifix");
-            var compileArgFile = "Temp/ifix/unity_" + platform + "_compile_argument";
-            var tmpDllPath = "Temp/ifix/Assembly-CSharp.dll";
-            File.WriteAllText(compileArgFile, getCompileArguments(platform, tmpDllPath));
-            //先编译dll到Temp目录下
-            Compile(compileArgFile);
-            //对编译后的dll生成补丁
-            GenPatch("Assembly-CSharp", tmpDllPath, corePath, patchPath);
+            Directory.CreateDirectory(outputDir);
+#if UNITY_2018_3_OR_NEWER
+            ScriptCompilationSettings scriptCompilationSettings = new ScriptCompilationSettings();
+            if (platform == Platform.android)
+            {
+                scriptCompilationSettings.group = BuildTargetGroup.Android;
+                scriptCompilationSettings.target = BuildTarget.Android;
+            }
+            else if(platform == Platform.ios)
+            {
+                scriptCompilationSettings.group = BuildTargetGroup.iOS;
+                scriptCompilationSettings.target = BuildTarget.iOS;
+            }
+            else
+            {
+                scriptCompilationSettings.group = BuildTargetGroup.Standalone;
+                scriptCompilationSettings.target = BuildTarget.StandaloneWindows;
+            }
 
-            File.Delete(compileArgFile);
-            File.Delete(tmpDllPath);
-            File.Delete(tmpDllPath + ".mdb");
+            ScriptCompilationResult scriptCompilationResult = PlayerBuildInterface.CompilePlayerScripts(scriptCompilationSettings, outputDir);
+
+            foreach (var assembly in injectAssemblys)
+            {
+                GenPatch(assembly, string.Format("{0}/{1}.dll", outputDir, assembly),
+                    "./Assets/Plugins/IFix.Core.dll", string.Format("{0}{1}.patch.bytes", patchOutputDir, assembly));
+            }
+#else
+            throw new NotImplementedException();
+            //var compileArgFile = "Temp/ifix/unity_" + platform + "_compile_argument";
+            //var tmpDllPath = "Temp/ifix/Assembly-CSharp.dll";
+            //File.WriteAllText(compileArgFile, getCompileArguments(platform, tmpDllPath));
+            //先编译dll到Temp目录下
+            //Compile(compileArgFile);
+            //对编译后的dll生成补丁
+            //GenPatch("Assembly-CSharp", tmpDllPath, corePath, patchPath);
+
+            //File.Delete(compileArgFile);
+            //File.Delete(tmpDllPath);
+            //File.Delete(tmpDllPath + ".mdb");
+#endif
         }
 
         //把方法签名写入文件
@@ -686,26 +724,22 @@ namespace IFix.Editor
             }
         }
 
-        //[MenuItem("IFix/Patch For Android", false, 3)]
-        //public static void PatchAndroid()
-        //{
-        //    GenPlatformPatch(Platform.android, "Assembly-CSharp-Android.patch.bytes");
-        //}
+#if UNITY_2018_3_OR_NEWER
+        [MenuItem("InjectFix/Fix(Android)", false, 3)]
+        public static void CompileToAndroid()
+        {
+            EditorUtility.DisplayProgressBar("Generate Patch for Android", "patching...", 0);
+            GenPlatformPatch(Platform.android, "");
+            EditorUtility.ClearProgressBar();
+        }
 
-        //[MenuItem("IFix/Patch For IOS", false, 4)]
-        //public static void PatchIOS()
-        //{
-        //    GenPlatformPatch(Platform.ios, "Assembly-CSharp-IOS.patch.bytes");
-        //}
-
-        //[MenuItem("IFix/Revert Assembly-CSharp(For test only)", false, 5)]
-        //public static void RevertTo()
-        //{
-        //    SelectBackup("Revert", backup =>
-        //    {
-        //        doRestore(backup);
-        //        AssetDatabase.Refresh();
-        //    });
-        //}
+        [MenuItem("InjectFix/Fix(IOS)", false, 4)]
+        public static void CompileToIOS()
+        {
+            EditorUtility.DisplayProgressBar("Generate Patch for IOS", "patching...", 0);
+            GenPlatformPatch(Platform.ios, "");
+            EditorUtility.ClearProgressBar();
+        }
+#endif
     }
 }
