@@ -11,6 +11,7 @@ namespace IFix.Core
     using System.Reflection;
     using System.Runtime.InteropServices;
     using System.Threading;
+    using System.Collections.Generic;
 
     [StructLayout(LayoutKind.Sequential)]
     unsafe struct UnmanagedStack
@@ -40,8 +41,8 @@ namespace IFix.Core
             ManagedStack = new object[VirtualMachine.MAX_EVALUATION_STACK_SIZE];
         }
 
-        //È¥µôÎö¹¹£¬Õý³£¶øÑÔ£¬¾²Ì¬±äÁ¿²»»áÎö¹¹£¬Èç¹ûÕû¸öÐéÄâ»úÊÍ·ÅµÄ»°£¬Í¨¹ýMarshal.AllocHGlobal·ÖÅäµÄ·ÇÍÐ¹Ü
-        //ÄÚ´æÓ¦¸ÃÒ²»á×Ô¶¯ÊÍ·Å°É£¿
+        //åŽ»æŽ‰æžæž„ï¼Œæ­£å¸¸è€Œè¨€ï¼Œé™æ€å˜é‡ä¸ä¼šæžæž„ï¼Œå¦‚æžœæ•´ä¸ªè™šæ‹Ÿæœºé‡Šæ”¾çš„è¯ï¼Œé€šè¿‡Marshal.AllocHGlobalåˆ†é…çš„éžæ‰˜ç®¡
+        //å†…å­˜åº”è¯¥ä¹Ÿä¼šè‡ªåŠ¨é‡Šæ”¾å§ï¼Ÿ
         //~ThreadStackInfo()
         //{
         //    //VirtualMachine._Info("~ThreadStackInfo");
@@ -55,11 +56,11 @@ namespace IFix.Core
         //    Marshal.FreeHGlobal(unmanagedStackHandler);
         //}
 
-        //±¾À´ThreadStaticÊÇºÜºÏÊÊµÄ·½°¸£¬µ«¾ÝËµUnityÏÂµÄThreadStatic»áCrash£¬
-        //UnityÎÄµµ£ºhttps://docs.unity3d.com/Manual/Attributes.html
-        //Ïà¹ØissueÁ´½Ó£ºhttps://issuetracker.unity3d.com/issues/
+        //æœ¬æ¥ThreadStaticæ˜¯å¾ˆåˆé€‚çš„æ–¹æ¡ˆï¼Œä½†æ®è¯´Unityä¸‹çš„ThreadStaticä¼šCrashï¼Œ
+        //Unityæ–‡æ¡£ï¼šhttps://docs.unity3d.com/Manual/Attributes.html
+        //ç›¸å…³issueé“¾æŽ¥ï¼šhttps://issuetracker.unity3d.com/issues/
         //                 e-document-threadstatic-attribute-must-not-be-used-i-will-cause-crashes
-        //issueÄÚÈÝ£º
+        //issueå†…å®¹ï¼š
         //This is a known limitation of the liveness check, as the we don't handle thread static or
         //context static variables as roots when performing the collection. 
         //The crash will happen in mono_unity_liveness_calculation_from_statics
@@ -88,6 +89,10 @@ namespace IFix.Core
     {
         internal static void UnboxPrimitive(Value* evaluationStackPointer, object obj, Type type)
         {
+            if (obj.GetType().IsEnum)
+            {
+                obj = Convert.ChangeType(obj, type);
+            }
             if (obj is int)
             {
                 evaluationStackPointer->Type = ValueType.Integer;
@@ -162,7 +167,7 @@ namespace IFix.Core
                 throw new NotImplementedException("Unbox a " + obj.GetType() + " to " + type);
         }
 
-        internal static object mGet(bool isArray, object root, int layer, int[] fieldIdList, FieldInfo[] fieldInfos)
+        internal static object mGet(bool isArray, object root, int layer, int[] fieldIdList, FieldInfo[] fieldInfos, Dictionary<int, NewFieldInfo> newFieldInfos)
         {
             //Console.WriteLine("mGet " + root);
             var fieldId = fieldIdList[layer];
@@ -175,21 +180,33 @@ namespace IFix.Core
                 else
                 {
                     var fieldInfo = fieldInfos[fieldId];
+                    
+                    if(fieldInfo == null)
+                    {
+                        return newFieldInfos[fieldId].GetValue(root);
+                    }
+
                     return fieldInfo.GetValue(root);
                 }
             }
             else
             {
                 var fieldInfo = fieldInfos[fieldId];
+
+                if(fieldInfo == null)
+                {
+                    return newFieldInfos[fieldId].GetValue(mGet(isArray, root, layer - 1, fieldIdList, fieldInfos, newFieldInfos));
+                }
+                
                 //VirtualMachine._Info("before --- " + fieldInfo);
-                var ret =  fieldInfo.GetValue(mGet(isArray, root, layer - 1, fieldIdList, fieldInfos));
+                var ret =  fieldInfo.GetValue(mGet(isArray, root, layer - 1, fieldIdList, fieldInfos, newFieldInfos));
                 //VirtualMachine._Info("after --- " + fieldInfo);
                 return ret;
             }
         }
 
         internal static void mSet(bool isArray, object root, object val, int layer, int[] fieldIdList,
-            FieldInfo[] fieldInfos)
+            FieldInfo[] fieldInfos, Dictionary<int, NewFieldInfo> newFieldInfos)
         {
             var fieldId = fieldIdList[layer];
             if (layer == 0)
@@ -201,22 +218,37 @@ namespace IFix.Core
                 else
                 {
                     var fieldInfo = fieldInfos[fieldId];
-                    //VirtualMachine._Info("set1 " + val.GetType() + " to " + fieldInfo + " of " + root.GetType()
-                    //    + ", root.hc = " + root.GetHashCode());
-                    fieldInfo.SetValue(root, val);
+
+                    if(fieldInfo == null)
+                    {
+                        newFieldInfos[fieldId].SetValue(root, val);
+                    }
+                    else
+                    {
+                        //VirtualMachine._Info("set1 " + val.GetType() + " to " + fieldInfo + " of " + root.GetType()
+                        //    + ", root.hc = " + root.GetHashCode());
+                        fieldInfo.SetValue(root, val);
+                    }
                 }
             }
             else
             {
                 var fieldInfo = fieldInfos[fieldId];
                 //VirtualMachine._Info("before get " + fieldInfo);
-                var parent = mGet(isArray, root, layer - 1, fieldIdList, fieldInfos);
+                var parent = mGet(isArray, root, layer - 1, fieldIdList, fieldInfos, newFieldInfos);
                 //VirtualMachine._Info("after get " + fieldInfo);
                 //VirtualMachine._Info("before set " + fieldInfo);
-                fieldInfo.SetValue(parent, val);
+                if(fieldInfo == null)
+                {
+                    newFieldInfos[fieldId].SetValue(parent, val);
+                }
+                else
+                {
+                    fieldInfo.SetValue(parent, val);
+                }
                 //VirtualMachine._Info("set2 " + val.GetType() + " to " + fieldInfo + " of " + parent.GetType());
                 //VirtualMachine._Info("after set " + fieldInfo);
-                mSet(isArray, root, parent, layer - 1, fieldIdList, fieldInfos);
+                mSet(isArray, root, parent, layer - 1, fieldIdList, fieldInfos, newFieldInfos);
             }
         }
 
@@ -224,8 +256,8 @@ namespace IFix.Core
         internal static unsafe object ToObject(Value* evaluationStackBase, Value* evaluationStackPointer,
             object[] managedStack, Type type, VirtualMachine virtualMachine, bool valueTypeClone = true)
         {
-            //Î´³õÊ¼»¯µÄlocalÒýÓÃ¿ÉÄÜ×÷Îªout²ÎÊý·´Éäµ÷ÓÃ
-            //TODO: ÑéÖ¤ÖµÀàÐÍout²ÎÊý£¬¶ÔÓ¦²ÎÊýÎ»ÖÃÊÇ·ñ¿ÉÒÔÊÇnull£¿
+            //æœªåˆå§‹åŒ–çš„localå¼•ç”¨å¯èƒ½ä½œä¸ºoutå‚æ•°åå°„è°ƒç”¨
+            //TODO: éªŒè¯å€¼ç±»åž‹outå‚æ•°ï¼Œå¯¹åº”å‚æ•°ä½ç½®æ˜¯å¦å¯ä»¥æ˜¯nullï¼Ÿ
             switch (evaluationStackPointer->Type)
             {
                 case ValueType.Integer:
@@ -331,7 +363,7 @@ namespace IFix.Core
                             var fieldIdList = fieldAddr.FieldIdList;
                             return mGet(evaluationStackPointer->Value2 != -1,
                                 fieldAddr.Object, fieldIdList.Length - 1,
-                                fieldIdList, virtualMachine.fieldInfos);
+                                fieldIdList, virtualMachine.fieldInfos, virtualMachine.newFieldInfos);
                         }
                         else
                         {
@@ -339,6 +371,11 @@ namespace IFix.Core
                             {
                                 var fieldInfo = virtualMachine.fieldInfos[evaluationStackPointer->Value2];
                                 var obj = managedStack[evaluationStackPointer->Value1];
+                                if(fieldInfo == null)
+                                {
+                                    virtualMachine.newFieldInfos[evaluationStackPointer->Value2].CheckInit(virtualMachine, obj);
+                                    return virtualMachine.newFieldInfos[evaluationStackPointer->Value2].GetValue(obj);
+                                }
                                 return fieldInfo.GetValue(obj);
                             }
                             else
@@ -358,6 +395,12 @@ namespace IFix.Core
                         if (fieldIndex >= 0)
                         {
                             var fieldInfo = virtualMachine.fieldInfos[fieldIndex];
+                            if(fieldInfo == null)
+                            {
+                                virtualMachine.newFieldInfos[fieldIndex].CheckInit(virtualMachine, null);
+                                
+                                return virtualMachine.newFieldInfos[fieldIndex].GetValue(null);
+                            }
                             return fieldInfo.GetValue(null);
                         }
                         else
@@ -407,7 +450,7 @@ namespace IFix.Core
         }
 
         public static void UpdateReference(Value* evaluationStackBase, Value* evaluationStackPointer,
-            object[] managedStack, object obj, VirtualMachine virtualMachine, Type type) //·´Éä×¨ÓÃ
+            object[] managedStack, object obj, VirtualMachine virtualMachine, Type type) //åå°„ä¸“ç”¨
         {
             switch (evaluationStackPointer->Type)
             {
@@ -435,7 +478,7 @@ namespace IFix.Core
                             //}
                             mSet(evaluationStackPointer->Value2 != -1,
                                 fieldAddr.Object, obj, fieldIdList.Length - 1,
-                                fieldIdList, virtualMachine.fieldInfos);
+                                fieldIdList, virtualMachine.fieldInfos, virtualMachine.newFieldInfos);
                         }
                         else
                         {
@@ -444,12 +487,19 @@ namespace IFix.Core
 
 
                                 var fieldInfo = virtualMachine.fieldInfos[evaluationStackPointer->Value2];
-                                //VirtualMachine._Info("update field: " + fieldInfo);
-                                //VirtualMachine._Info("update field of: " + fieldInfo.DeclaringType);
-                                //VirtualMachine._Info("update ref obj: "
-                                //    + managedStack[evaluationStackPointer->Value1]);
-                                //VirtualMachine._Info("update ref obj idx: " + evaluationStackPointer->Value1);
-                                fieldInfo.SetValue(managedStack[evaluationStackPointer->Value1], obj);
+                                if(fieldInfo == null)
+                                {
+                                    virtualMachine.newFieldInfos[evaluationStackPointer->Value2].SetValue(managedStack[evaluationStackPointer->Value1], obj);;
+                                }
+                                else
+                                {
+                                    //VirtualMachine._Info("update field: " + fieldInfo);
+                                    //VirtualMachine._Info("update field of: " + fieldInfo.DeclaringType);
+                                    //VirtualMachine._Info("update ref obj: "
+                                    //    + managedStack[evaluationStackPointer->Value1]);
+                                    //VirtualMachine._Info("update ref obj idx: " + evaluationStackPointer->Value1);
+                                    fieldInfo.SetValue(managedStack[evaluationStackPointer->Value1], obj);
+                                }
                             }
                             else
                             {
@@ -460,13 +510,20 @@ namespace IFix.Core
                         }
                         break;
                     }
-                case ValueType.StaticFieldReference://¸üÐÂÍê±Ï£¬Ö±½Óreturn
+                case ValueType.StaticFieldReference://æ›´æ–°å®Œæ¯•ï¼Œç›´æŽ¥return
                     {
                         var fieldIndex = evaluationStackPointer->Value1;
                         if (fieldIndex >= 0)
                         {
                             var fieldInfo = virtualMachine.fieldInfos[evaluationStackPointer->Value1];
-                            fieldInfo.SetValue(null, obj);
+                            if(fieldInfo == null)
+                            {
+                                virtualMachine.newFieldInfos[evaluationStackPointer->Value1].SetValue(null, obj);;
+                            }
+                            else
+                            {
+                                fieldInfo.SetValue(null, obj);
+                            }
                         }
                         else
                         {
@@ -487,7 +544,7 @@ namespace IFix.Core
 
         internal object[] managedStack;
 
-        internal Value* currentTop;//ÓÃÓÚpush×´Ì¬
+        internal Value* currentTop;//ç”¨äºŽpushçŠ¶æ€
 
         internal Value** topWriteBack;
 
@@ -706,7 +763,7 @@ namespace IFix.Core
             return (T)GetObject(offset);
         }
 
-        public void PushObjectAsResult(object obj, Type type) //·´Éä×¨ÓÃ
+        public void PushObjectAsResult(object obj, Type type) //åå°„ä¸“ç”¨
         {
             EvaluationStackOperation.PushObject(evaluationStackBase, argumentBase, managedStack, obj, type);
             currentTop = argumentBase + 1;
@@ -720,7 +777,7 @@ namespace IFix.Core
             currentTop++;
         }
 
-        public void UpdateReference(int offset, object obj, VirtualMachine virtualMachine, Type type) //·´Éä×¨ÓÃ
+        public void UpdateReference(int offset, object obj, VirtualMachine virtualMachine, Type type) //åå°„ä¸“ç”¨
         {
             EvaluationStackOperation.UpdateReference(ThreadStackInfo.Stack.UnmanagedStack->Base,
                 argumentBase + offset, managedStack, obj, virtualMachine, type);
@@ -728,7 +785,7 @@ namespace IFix.Core
 
         public static void End(ref Call call)
         {
-            //TopµÄÎ¬»¤
+            //Topçš„ç»´æŠ¤
             //ThreadStackInfo.Stack.UnmanagedStack->Top = call.argumentBase;
         }
     }

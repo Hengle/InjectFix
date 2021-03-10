@@ -10,15 +10,43 @@ using System;
 
 namespace IFix.Core
 {
-    //ƒ‰√˚¿‡ƒ£ƒ‚
+    //ÂåøÂêçÁ±ªÊ®°Êãü
     public class AnonymousStorey
     {
         Value[] unmanagedFields;
         object[] managedFields;
-        public AnonymousStorey(int fieldNum)
+        internal int typeId;
+        protected VirtualMachine virtualMachine;
+        int equalMethodId;
+        int finalizeMethodId;
+        int getHashCodeMethodId;
+        int toStringMethodId;
+
+        public AnonymousStorey(int fieldNum, int[] fieldTypes,int typeID, int[] vTable, VirtualMachine virtualMachine)
         {
             unmanagedFields = new Value[fieldNum];
             managedFields = new object[fieldNum];
+            for (int i = 0; i < fieldTypes.Length; ++i)
+            {
+                if (fieldTypes[i] > 0)
+                {
+                    unmanagedFields[i].Type = ValueType.ValueType;
+                    unmanagedFields[i].Value1 = i;
+                    int id = fieldTypes[i] - 1;
+                    managedFields[i] = Activator.CreateInstance(virtualMachine.ExternTypes[id]);
+                }
+                else if (fieldTypes[i] == -2)
+                {
+                    unmanagedFields[i].Type = ValueType.Object;
+                    unmanagedFields[i].Value1 = i;
+                }
+            }
+            typeId = typeID;
+            this.virtualMachine = virtualMachine;
+            equalMethodId = vTable[0];
+            finalizeMethodId = vTable[1];
+            getHashCodeMethodId = vTable[2];
+            toStringMethodId = vTable[3];
         }
 
         unsafe internal void Ldfld(int fieldIndex, Value* evaluationStackBase, Value* evaluationStackPointer,
@@ -67,13 +95,71 @@ namespace IFix.Core
                 EvaluationStackOperation.PushObject(b, b + fieldIndex, managedFields, obj, type);
             }
         }
+
+        public bool ObjectEquals(object obj)
+        {
+            return base.Equals(obj);
+        }
+
+        public override bool Equals(object obj)
+        {
+            if(equalMethodId == -1)
+                return ObjectEquals(obj);
+            Call call = Call.Begin();
+            call.PushObject(this);
+            call.PushObject(obj);
+            virtualMachine.Execute(equalMethodId, ref call, 2, 0);
+            return call.GetBoolean(0);
+        }
+
+        public int ObjectGetHashCode()
+        {
+            return base.GetHashCode();
+        }
+
+        public override int GetHashCode()
+        {
+            if(getHashCodeMethodId == -1)
+                return ObjectGetHashCode();
+            Call call = Call.Begin();
+            call.PushObject(this);
+            virtualMachine.Execute(getHashCodeMethodId, ref call, 1, 0);
+            return call.GetInt32(0);
+        }
+
+        public string ObjectToString()
+        {
+            return base.ToString();
+        }
+
+        public override string ToString()
+        {
+            if (toStringMethodId == -1)
+                return ObjectToString();
+            Call call = Call.Begin();
+            call.PushObject(this);
+            virtualMachine.Execute(toStringMethodId, ref call, 1, 0);
+            return call.GetAsType<string>(0);
+        }
+
+        ~AnonymousStorey()
+        {
+            if (finalizeMethodId != -1)
+            {
+                Call call = Call.Begin();
+                call.PushObject(this);
+                virtualMachine.Execute(finalizeMethodId, ref call, 1, 0);
+            }
+        }
     }
 
     public class AnonymousStoreyInfo
     {
         public int FieldNum = 0;
+        public int[] FieldTypes = null;
         public int CtorId = 0;
         public int CtorParamNum = 0;
         public int[] Slots = null;
+        public int[] VTable = null;
     }
 }
