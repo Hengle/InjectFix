@@ -46,7 +46,7 @@ namespace IFix.Core
 
             for (int i = 0; i < paramerInfos.Length; i++)
             {
-                outFlags[i] = paramerInfos[i].IsOut;
+                outFlags[i] = !paramerInfos[i].IsIn && paramerInfos[i].IsOut;
                 if (paramerInfos[i].ParameterType.IsByRef)
                 {
                     refFlags[i] = true;
@@ -134,7 +134,7 @@ namespace IFix.Core
 
                 if (isInstantiate || (method.IsConstructor && method.DeclaringType.IsValueType))
                 {
-                    ret = ctor.Invoke(args);//TODO: Delegate´´½¨ÓÃDelegate.CreateDelegate
+                    ret = ctor.Invoke(args);//TODO: Delegateåˆ›å»ºç”¨Delegate.CreateDelegate
                 }
                 else
                 {
@@ -144,10 +144,10 @@ namespace IFix.Core
                         instance = EvaluationStackOperation.ToObject(call.evaluationStackBase, call.argumentBase,
                             managedStack, method.DeclaringType, virtualMachine, false);
                     }
-                    //NullableÈÔÈ»ÊÇÖµÀàÐÍ£¬Ö»ÊÇÐÂÔöÁËÊÇ·ñÎªnullµÄ±êÖ¾Î»£¬ÈÔÈ»Í¨¹ý´«µØÖ·µÄ·½Ê½½øÐÐ·½·¨µ÷ÓÃ£¬
-                    //µ«ÕâÔÚ·´Éäµ÷ÓÃÐÐ²»Í¨£¬²ÎÊýÊÇobjectÀàÐÍ£¬boxingµ½object¾ÍÊÇnull£¬ËùÒÔ»á´¥·¢
-                    //¡°Non-static method requires a target¡±Òì³£
-                    //ËùÒÔÕâÖ»ÄÜÌØÊâ´¦ÀíÒ»ÏÂ
+                    //Nullableä»ç„¶æ˜¯å€¼ç±»åž‹ï¼Œåªæ˜¯æ–°å¢žäº†æ˜¯å¦ä¸ºnullçš„æ ‡å¿—ä½ï¼Œä»ç„¶é€šè¿‡ä¼ åœ°å€çš„æ–¹å¼è¿›è¡Œæ–¹æ³•è°ƒç”¨ï¼Œ
+                    //ä½†è¿™åœ¨åå°„è°ƒç”¨è¡Œä¸é€šï¼Œå‚æ•°æ˜¯objectç±»åž‹ï¼Œboxingåˆ°objectå°±æ˜¯nullï¼Œæ‰€ä»¥ä¼šè§¦å‘
+                    //â€œNon-static method requires a targetâ€å¼‚å¸¸
+                    //æ‰€ä»¥è¿™åªèƒ½ç‰¹æ®Šå¤„ç†ä¸€ä¸‹
                     if (isNullableHasValue)
                     {
                         ret = (instance != null);
@@ -158,7 +158,14 @@ namespace IFix.Core
                     }
                     else
                     {
-                        ret = method.Invoke(instance, args);
+                        if (method.IsStatic == false && instance == null)
+                        {
+                            throw new TargetException(string.Format("can not invoke method [{0}.{1}], Non-static method require instance but got null.", method.DeclaringType, method.Name));
+                        }
+                        else
+                        {
+                            ret = method.Invoke(instance, args);
+                        }
                     }
                 }
 
@@ -183,7 +190,11 @@ namespace IFix.Core
                     }
                 }
             }
-            //catch (TargetInvocationException e)
+            catch (TargetInvocationException e)
+            {
+                throw e.InnerException;
+            }
+            //catch (TargetException  e)
             //{
             //    //VirtualMachine._Info("exception method: " + method + ", in " + method.DeclaringType + ", msg:"
             //        + e.InnerException);

@@ -21,7 +21,7 @@ namespace IFix
             return new EmptyGenerateConfigure();
         }
 
-        //½ö½ö¼òµ¥µÄ´ÓÎÄ¼ş¼ÓÔØÀàÃû¶øÒÑ
+        //ä»…ä»…ç®€å•çš„ä»æ–‡ä»¶åŠ è½½ç±»åè€Œå·²
         public static GenerateConfigure FromFile(string filename)
         {
             DefaultGenerateConfigure generateConfigure = new DefaultGenerateConfigure();
@@ -42,139 +42,86 @@ namespace IFix
                     }
                     generateConfigure.configures[configureName] = configure;
                 }
+                generateConfigure.blackListMethodInfo = readMatchInfo(reader);
             }
 
             return generateConfigure;
         }
 
         /// <summary>
-        /// Èç¹ûÒ»¸ö·½·¨´òÁËÖ¸¶¨µÄ±êÇ©£¬·µ»ØÆäÅäÖÃµÄ±êÖ¾Î»
+        /// å¦‚æœä¸€ä¸ªæ–¹æ³•æ‰“äº†æŒ‡å®šçš„æ ‡ç­¾ï¼Œè¿”å›å…¶é…ç½®çš„æ ‡å¿—ä½
         /// </summary>
-        /// <param name="tag">±êÇ©</param>
-        /// <param name="method">Òª²éÑ¯µÄ·½·¨</param>
-        /// <param name="flag">Êä³ö²ÎÊı£¬ÓÃ»§ÅäÖÃµÄ±êÖ¾Î»</param>
+        /// <param name="tag">æ ‡ç­¾</param>
+        /// <param name="method">è¦æŸ¥è¯¢çš„æ–¹æ³•</param>
+        /// <param name="flag">è¾“å‡ºå‚æ•°ï¼Œç”¨æˆ·é…ç½®çš„æ ‡å¿—ä½</param>
         /// <returns></returns>
         public abstract bool TryGetConfigure(string tag, MethodReference method, out int flag);
 
         /// <summary>
-        /// ÅĞ¶ÏÒ»¸ö·½·¨ÊÇ·ñÊÇĞÂÔö·½·¨
+        /// åˆ¤æ–­ä¸€ä¸ªæ–¹æ³•æ˜¯å¦æ˜¯æ–°å¢æ–¹æ³•
         /// </summary>
-        /// <param name="method">Òª²éÑ¯µÄ·½·¨</param>
+        /// <param name="method">è¦æŸ¥è¯¢çš„æ–¹æ³•</param>
         /// <returns></returns>
         public abstract bool IsNewMethod(MethodReference method);
-    }
 
-    //ÄÚ²¿²âÊÔ×¨ÓÃ
-    public class EmptyGenerateConfigure : GenerateConfigure
-    {
-        public override bool TryGetConfigure(string tag, MethodReference method, out int flag)
-        {
-            flag = 0;
-            return true;
-        }
+        public abstract bool IsNewClass(TypeReference type);
 
-        public override bool IsNewMethod(MethodReference method)
-        {
-            return false;
-        }
-    }
+        public abstract bool isNewField(FieldReference field);
 
-    //×¢ÈëÅäÖÃÊ¹ÓÃ
-    public class DefaultGenerateConfigure : GenerateConfigure
-    {
-        internal Dictionary<string, Dictionary<string, int>> configures
-            = new Dictionary<string, Dictionary<string, int>>();
+        public abstract void AddNewMethod(MethodReference method);
 
-        public override bool TryGetConfigure(string tag, MethodReference method, out int flag)
-        {
-            Dictionary<string, int> configure;
-            flag = 0;
-            return (configures.TryGetValue(tag, out configure)
-                && configure.TryGetValue(method.DeclaringType.FullName, out flag));
-        }
+        public abstract void AddNewClass(TypeReference type);
 
-        public override bool IsNewMethod(MethodReference method)
-        {
-            return false;
-        }
-    }
+        public abstract void AddNewField(FieldReference field);
 
-    //patchÅäÖÃÊ¹ÓÃ
-    public class PatchGenerateConfigure : GenerateConfigure
-    {
-        public override bool TryGetConfigure(string tag, MethodReference method, out int flag)
-        {
-            flag = 0;
-            if (tag == "IFix.InterpretAttribute")
-            {
-                return redirectMethods.Contains(method);
-            }
-            else if (tag == "IFix.IFixAttribute")
-            {
-                return switchMethods.Contains(method);
-            }
-            return false;
-        }
-
-        public override bool IsNewMethod(MethodReference method)
-        {
-            return newMethods.Contains(method);
-        }
-
-        //ÔİÊ±²»Ö§³ÖredirectÀàĞÍµÄ·½·¨
-        HashSet<MethodReference> redirectMethods = new HashSet<MethodReference>();
-        HashSet<MethodReference> switchMethods = new HashSet<MethodReference>();
-        HashSet<MethodReference> newMethods = new HashSet<MethodReference>();
-
-        MethodDefinition findMatchMethod(Dictionary<string, Dictionary<string, List<MethodDefinition>>> searchData,
-            MethodDefinition method)
-        {
-            Dictionary<string, List<MethodDefinition>> methodsOfType;
-            List<MethodDefinition> overloads;
-            if (searchData.TryGetValue(method.DeclaringType.FullName, out methodsOfType)
-                && methodsOfType.TryGetValue(method.Name, out overloads))
-            {
-                foreach (var overload in overloads)
-                {
-                    if (overload.IsTheSame(method))
-                    {
-                        return overload;
-                    }
-                }
-            }
-            return null;
-        }
-        //²ÎÊıÀàĞÍĞÅÏ¢
-        class ParameterMatchInfo
+        //å‚æ•°ç±»å‹ä¿¡æ¯
+        internal class ParameterMatchInfo
         {
             public bool IsOut;
             public string ParameterType;
         }
 
-        //·½·¨Ç©ÃûĞÅÏ¢
-        class MethodMatchInfo
+        //æ–¹æ³•ç­¾åä¿¡æ¯
+        internal class MethodMatchInfo
         {
             public string Name;
             public string ReturnType;
             public ParameterMatchInfo[] Parameters;
         }
 
-        //ÅĞ¶ÏÒ»¸ö·½·¨ÊÇ·ñÄÜ¹»ÔÚmatchInfoÀïÍ·ÄÜ²éÑ¯µ½
-        bool isMatch(Dictionary<string, MethodMatchInfo[]> matchInfo, MethodReference method)
+        internal class FieldMatchInfo
+        {
+            public string Name;
+            public string FieldType;
+        }
+
+        internal class PropertyMatchInfo
+        {
+            public string Name;
+            public string PropertyType;
+        }
+
+        //åˆ¤æ–­ä¸€ä¸ªæ–¹æ³•æ˜¯å¦èƒ½å¤Ÿåœ¨matchInfoé‡Œå¤´èƒ½æŸ¥è¯¢åˆ°
+        internal static bool isMatch(Dictionary<string, MethodMatchInfo[]> matchInfo, MethodReference method)
         {
             MethodMatchInfo[] mmis;
             if (matchInfo.TryGetValue(method.DeclaringType.FullName, out mmis))
             {
-                foreach(var mmi in mmis)
+                foreach (var mmi in mmis)
                 {
                     if (mmi.Name == method.Name && mmi.ReturnType == method.ReturnType.FullName
                         && mmi.Parameters.Length == method.Parameters.Count)
                     {
                         bool paramMatch = true;
-                        for(int i = 0; i < mmi.Parameters.Length; i++)
+                        for (int i = 0; i < mmi.Parameters.Length; i++)
                         {
+                            var paramType = method.Parameters[i].ParameterType;
+                            if (paramType.IsRequiredModifier)
+                            {
+                                paramType = (paramType as RequiredModifierType).ElementType;
+                            }
                             if (mmi.Parameters[i].IsOut != method.Parameters[i].IsOut
-                                || mmi.Parameters[i].ParameterType != method.Parameters[i].ParameterType.FullName)
+                                || mmi.Parameters[i].ParameterType != paramType.FullName)
                             {
                                 paramMatch = false;
                                 break;
@@ -187,8 +134,49 @@ namespace IFix
             return false;
         }
 
-        //¶ÁÈ¡·½·¨ĞÅÏ¢£¬Ö÷ÒªÊÇ·½·¨µÄÇ©ÃûĞÅÏ¢£¬Ãû×Ö+²ÎÊıÀàĞÍ+·µ»ØÖµÀàĞÍ
-        static Dictionary<string, MethodMatchInfo[]> readMatchInfo(BinaryReader reader)
+        internal static bool isMatchForField(Dictionary<string, FieldMatchInfo[]> matchInfo, FieldReference field)
+        {
+            FieldMatchInfo[] mmis;
+            if (matchInfo.TryGetValue(field.DeclaringType.FullName, out mmis))
+            {
+                foreach (var mmi in mmis)
+                {
+                    if (mmi.Name == field.Name && mmi.FieldType == field.FieldType.FullName)
+                    {
+                        return true;
+                    }
+                }
+            }
+            return false;
+        }
+
+        internal static bool isMatchForProperty(Dictionary<string, PropertyMatchInfo[]> matchInfo, PropertyReference property)
+        {
+            PropertyMatchInfo[] mmis;
+            if (matchInfo.TryGetValue(property.DeclaringType.FullName, out mmis))
+            {
+                foreach (var mmi in mmis)
+                {
+                    if (mmi.Name == property.Name && mmi.PropertyType == property.PropertyType.FullName)
+                    {
+                        return true;
+                    }
+                }
+            }
+            return false;
+        }
+
+        internal static bool isMatchForClass(HashSet<string> matchInfo, TypeReference type)
+        {
+            if (matchInfo.Contains(type.ToString()))
+            {
+                return true;
+            }
+            return false;
+        }
+
+        //è¯»å–æ–¹æ³•ä¿¡æ¯ï¼Œä¸»è¦æ˜¯æ–¹æ³•çš„ç­¾åä¿¡æ¯ï¼Œåå­—+å‚æ•°ç±»å‹+è¿”å›å€¼ç±»å‹
+        internal static Dictionary<string, MethodMatchInfo[]> readMatchInfo(BinaryReader reader)
         {
             Dictionary<string, MethodMatchInfo[]> matchInfo = new Dictionary<string, MethodMatchInfo[]>();
 
@@ -219,16 +207,248 @@ namespace IFix
             return matchInfo;
         }
 
-        //¶ÁÈ¡ÅäÖÃĞÅÏ¢£¨ÒªpatchµÄ·½·¨ÁĞ±í£¬ĞÂÔö·½·¨ÁĞ±í£©
+        internal static Dictionary<string, FieldMatchInfo[]> readFieldInfo(BinaryReader reader)
+        {
+            Dictionary<string, FieldMatchInfo[]> matchInfo = new Dictionary<string, FieldMatchInfo[]>();
+
+            int typeCount = reader.ReadInt32();
+            for (int k = 0; k < typeCount; k++)
+            {
+                string typeName = reader.ReadString();
+                int methodCount = reader.ReadInt32();
+                FieldMatchInfo[] fieldMatchInfos = new FieldMatchInfo[methodCount];
+                for (int i = 0; i < methodCount; i++)
+                {
+                    FieldMatchInfo fmi = new FieldMatchInfo();
+                    fmi.Name = reader.ReadString();
+                    fmi.FieldType = reader.ReadString();
+                    fieldMatchInfos[i] = fmi;
+                }
+                matchInfo[typeName] = fieldMatchInfos;
+            }
+
+            return matchInfo;
+        }
+
+        internal static Dictionary<string, PropertyMatchInfo[]> readPropertyInfo(BinaryReader reader)
+        {
+            Dictionary<string, PropertyMatchInfo[]> matchInfo = new Dictionary<string, PropertyMatchInfo[]>();
+
+            int typeCount = reader.ReadInt32();
+            for (int k = 0; k < typeCount; k++)
+            {
+                string typeName = reader.ReadString();
+                int methodCount = reader.ReadInt32();
+                PropertyMatchInfo[] propertyMatchInfos = new PropertyMatchInfo[methodCount];
+                for (int i = 0; i < methodCount; i++)
+                {
+                    PropertyMatchInfo pmi = new PropertyMatchInfo();
+                    pmi.Name = reader.ReadString();
+                    pmi.PropertyType = reader.ReadString();
+                    propertyMatchInfos[i] = pmi;
+                }
+                matchInfo[typeName] = propertyMatchInfos;
+            }
+
+            return matchInfo;
+        }
+
+        internal static HashSet<string> readMatchInfoForClass(BinaryReader reader)
+        {
+            HashSet<string> setMatchInfoForClass = new HashSet<string>();
+            int typeCount = reader.ReadInt32();
+            for (int k = 0; k < typeCount; k++)
+            {
+                string className = reader.ReadString();
+                setMatchInfoForClass.Add(className);
+            }
+            return setMatchInfoForClass;
+        }
+    }
+
+    //å†…éƒ¨æµ‹è¯•ä¸“ç”¨
+    public class EmptyGenerateConfigure : GenerateConfigure
+    {
+        public override bool TryGetConfigure(string tag, MethodReference method, out int flag)
+        {
+            flag = 0;
+            return true;
+        }
+
+        public override bool IsNewMethod(MethodReference method)
+        {
+            return false;
+        }
+        public override bool IsNewClass(TypeReference type)
+        {
+            return false;
+        }
+
+        public override bool isNewField(FieldReference field)
+        {
+            return false;
+        }
+
+        public override void AddNewMethod(MethodReference method)
+        {
+
+        }
+
+        public override void AddNewClass(TypeReference type)
+        {
+
+        }
+
+        public override void AddNewField(FieldReference field)
+        {
+
+        }
+    }
+
+    //æ³¨å…¥é…ç½®ä½¿ç”¨
+    public class DefaultGenerateConfigure : GenerateConfigure
+    {
+        internal Dictionary<string, Dictionary<string, int>> configures
+            = new Dictionary<string, Dictionary<string, int>>();
+
+        internal Dictionary<string, MethodMatchInfo[]> blackListMethodInfo = null;
+
+        public override bool TryGetConfigure(string tag, MethodReference method, out int flag)
+        {
+            Dictionary<string, int> configure;
+            flag = 0;
+            if(tag == "IFix.IFixAttribute" && blackListMethodInfo != null)
+            {
+                if(isMatch(blackListMethodInfo, method))
+                {
+                    return false;
+                }
+            }
+            return (configures.TryGetValue(tag, out configure)
+                && configure.TryGetValue(method.DeclaringType.FullName, out flag));
+        }
+
+        public override bool IsNewMethod(MethodReference method)
+        {
+            return false;
+        }
+        public override bool IsNewClass(TypeReference type)
+        {
+            return false;
+        }
+        public override bool isNewField(FieldReference field)
+        {
+            return false;
+        }
+        public override void AddNewMethod(MethodReference method)
+        {
+            
+        }
+        public override void AddNewClass(TypeReference type)
+        {
+
+        }
+        public override void AddNewField(FieldReference field)
+        {
+
+        }
+    }
+
+    //patché…ç½®ä½¿ç”¨
+    public class PatchGenerateConfigure : GenerateConfigure
+    {
+        public override bool TryGetConfigure(string tag, MethodReference method, out int flag)
+        {
+            flag = 0;
+            if (tag == "IFix.InterpretAttribute")
+            {
+                return redirectMethods.Contains(method);
+            }
+            else if (tag == "IFix.IFixAttribute")
+            {
+                return switchMethods.Contains(method);
+            }
+            return false;
+        }
+
+        public override bool IsNewMethod(MethodReference method)
+        {
+            return newMethods.Contains(method);
+        }
+
+        public override bool IsNewClass(TypeReference type)
+        {
+            return newClasses.Contains(type);
+        }
+
+        public override bool isNewField(FieldReference field)
+        {
+            return newFields.Contains(field);
+        }
+
+        public override void AddNewMethod(MethodReference method)
+        {
+            newMethods.Add(method);
+        }
+
+        public override void AddNewClass(TypeReference type)
+        {
+            newClasses.Add(type);
+        }
+
+        public override void AddNewField(FieldReference field)
+        {
+            newFields.Add(field);
+        }
+
+        //æš‚æ—¶ä¸æ”¯æŒredirectç±»å‹çš„æ–¹æ³•
+        HashSet<MethodReference> redirectMethods = new HashSet<MethodReference>();
+        HashSet<MethodReference> switchMethods = new HashSet<MethodReference>();
+        HashSet<MethodReference> newMethods = new HashSet<MethodReference>();
+        HashSet<TypeReference> newClasses = new HashSet<TypeReference>();
+        HashSet<FieldReference> newFields = new HashSet<FieldReference>();
+        MethodDefinition findMatchMethod(Dictionary<string, Dictionary<string, List<MethodDefinition>>> searchData,
+            MethodDefinition method)
+        {
+            Dictionary<string, List<MethodDefinition>> methodsOfType;
+            List<MethodDefinition> overloads;
+            if (searchData.TryGetValue(method.DeclaringType.FullName, out methodsOfType)
+                && methodsOfType.TryGetValue(method.Name, out overloads))
+            {
+                foreach (var overload in overloads)
+                {
+                    if (overload.IsTheSame(method))
+                    {
+                        return overload;
+                    }
+                }
+            }
+            return null;
+        }
+
+        private static bool isCompilerGenerated(FieldReference field)
+        {
+            var fd = field as FieldDefinition;
+            return fd != null && fd.CustomAttributes.Any(ca => ca.AttributeType.FullName 
+            == "System.Runtime.CompilerServices.CompilerGeneratedAttribute");
+        }
+
+        //è¯»å–é…ç½®ä¿¡æ¯ï¼ˆè¦patchçš„æ–¹æ³•åˆ—è¡¨ï¼Œæ–°å¢æ–¹æ³•åˆ—è¡¨ï¼‰
         public PatchGenerateConfigure(AssemblyDefinition newAssembly, string cfgPath)
         {
             Dictionary<string, MethodMatchInfo[]> patchMethodInfo = null;
             Dictionary<string, MethodMatchInfo[]> newMethodInfo = null;
+            Dictionary<string, FieldMatchInfo[]> newFieldsInfo = null;
+            Dictionary<string, PropertyMatchInfo[]> newPropertiesInfo = null;
+            HashSet<string> newClassInfo = null;
 
             using (BinaryReader reader = new BinaryReader(File.Open(cfgPath, FileMode.Open)))
             {
                 patchMethodInfo = readMatchInfo(reader);
                 newMethodInfo = readMatchInfo(reader);
+                newFieldsInfo = readFieldInfo(reader);
+                newPropertiesInfo = readPropertyInfo(reader);
+                newClassInfo = readMatchInfoForClass(reader);
             }
 
             foreach (var method in (from type in newAssembly.GetAllType() from method in type.Methods select method ))
@@ -239,7 +459,52 @@ namespace IFix
                 }
                 if (isMatch(newMethodInfo, method))
                 {
-                    newMethods.Add(method);
+                    AddNewMethod(method);
+                }
+            }
+            foreach (var clas in newAssembly.GetAllType())
+            {
+                if (isMatchForClass(newClassInfo, clas))
+                {
+                    AddNewClass(clas);
+                }
+            }
+            foreach (var property in (from type in newAssembly.GetAllType() from property in type.Properties select property))
+            {
+                if (isMatchForProperty(newPropertiesInfo, property))
+                {
+                    AddNewMethod(property.SetMethod);
+                    AddNewMethod(property.GetMethod);
+
+                    var methods = new List<MethodDefinition>{property.GetMethod, property.SetMethod};
+                    
+                    var defination = newAssembly.MainModule.GetType(property.DeclaringType.FullName);
+                    foreach (var field in ( from method in methods
+                        where method != null && method.IsSpecialName && method.Body != null 
+                            && method.Body.Instructions != null
+                        from instruction in method.Body.Instructions
+                        where instruction.OpCode.Code == Mono.Cecil.Cil.Code.Ldsfld
+                            || instruction.OpCode.Code == Mono.Cecil.Cil.Code.Stsfld
+                            || instruction.OpCode.Code == Mono.Cecil.Cil.Code.Ldsflda
+                            || instruction.OpCode.Code == Mono.Cecil.Cil.Code.Ldfld
+                            || instruction.OpCode.Code == Mono.Cecil.Cil.Code.Stfld
+                            || instruction.OpCode.Code == Mono.Cecil.Cil.Code.Ldflda
+                        where isCompilerGenerated(instruction.Operand as Mono.Cecil.FieldReference)
+                        select (instruction.Operand as Mono.Cecil.FieldReference).Resolve()).Distinct())
+                    {
+                        var backingField = property.DeclaringType.Fields.FirstOrDefault(f => f.FullName == field.FullName);
+                        if(backingField != null)
+                        {
+                            AddNewField(backingField);
+                        }
+                    }
+                }
+            }
+            foreach (var field in (from type in newAssembly.GetAllType() from field in type.Fields select field ))
+            {
+                if (isMatchForField(newFieldsInfo, field))
+                {
+                    AddNewField(field);
                 }
             }
         }
